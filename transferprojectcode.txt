@@ -1,0 +1,300 @@
+/******************************************************************
+TRANSFER  MODEL
+*******************************************************************/;
+
+%include "\\apporto.com\dfs\UNCO\Users\acqu8971_unco\Desktop\SRM 637\HW5\autoarma.sas";
+%include "\\apporto.com\dfs\UNCO\Users\acqu8971_unco\Desktop\SRM 637\HW5\autoar.sas";
+
+
+DM  'output; clear; log;  clear;';
+OPTIONS   NONUMBER    NODATE;
+ODS  pdf   file="\\apporto.com\dfs\UNCO\Users\acqu8971_unco\Desktop\SRM 637\PROJECT\Prob2\proj.pdf" notoc  style =rtf;
+ODS  NOPTITLE;  ** Don’t print "The REG Procedure"-type titles;
+
+
+
+data data1;
+infile "\\apporto.com\dfs\UNCO\Users\acqu8971_unco\Desktop\SRM 637\PROJECT\Prob2\Data.txt";
+input Year $  Month   Temp   Elec ;
+date = INTNX("month", "01jan1997"d,_N_-1);
+FORMAT date monyy7.;
+obs=_N_;
+RUN;
+
+
+proc print data=data1;
+run;
+
+
+* Joint plot of Temp and Elec ;
+
+
+goptions ftext='Times New Roman'  ctext=BLACK htext=1 cells;  
+title 'Joint plot of  Energy Consumption and Temp';
+
+axis1 width=1 label=( a=90 r=0  'Units ( in thousands)') minor=none ; 
+axis2 width=1 minor=none ;
+symbol1 c=red ci=red v=none   interpol=join l=.1 w=.1;  
+symbol2 c=BLUE ci=BLUE v=none interpol=join l=.1 w=.1;  
+Legend1 LABEL=NONE FRAME VALUE=( 'Energy Consumption' 'Temp') shape=symbol(5, .25);
+
+  proc gplot data=data1;
+    plot (Elec Temp)*date/overlay legend=legend1 vaxis=axis1 haxis=axis2;
+
+run;  quit;
+
+
+proc sgplot data=data1;
+series x=date y=Temp;
+series x=date y=Elec;
+title "Joint Plot of Electricity Consumption Vs Temperature";
+run; quit;
+
+
+*Compute the  ccf using arima proc (Original Model) ; 
+PROC ARIMA DATA=data1 plots(only)=(series(acf pacf crosscorr) );
+IDENTIFY VAR=Temp NLAG=28;
+IDENTIFY VAR=Elec NLAG=28  crosscorr=Temp ; 
+run;  quit;
+
+
+
+data data1;
+set data1;
+xt = dif12(Temp);
+yt = dif12(Elec);
+
+lx =sqrt(Temp);
+ly =log(Elec);
+
+lxt= dif12(lx);
+lyt= dif12(ly);
+run;
+
+
+proc print data= data1;
+run; quit;
+
+
+/*Joint Plot of  Seasonal Differenced Elec. Cons Vs Temperature";*/
+proc sgplot data=data1;
+series x=date y=xt;
+series x=date y=yt;
+title "Joint Plot of  Seasonal Differenced Elec. Cons Vs Temperature";
+run; quit;
+
+
+
+
+*Compute the  ccf using arima proc (Original Model) ; 
+PROC ARIMA DATA=data1 plots(only)=(series(acf pacf crosscorr) );
+IDENTIFY VAR=xt NLAG=27   stationarity=(adf=1) ;
+IDENTIFY VAR=xt NLAG=27   stationarity=(pp=0) ;
+IDENTIFY VAR=yt NLAG=27   stationarity=(adf=1); 
+IDENTIFY VAR=yt NLAG=27   stationarity=(pp=0); 
+run;  quit;
+
+
+
+/* identify var=sales(1,12);Takes a second-order difference of SALES, so that the series analyzed 
+ is the difference between the current period-to-period change in SALES and the change 12 periods ago. 
+  You might want to do this if the series had both a trend over time and a seasonal pattern.
+  There is no limit to the order of differencing and the degree of lagging for each difference.
+
+
+
+*Compute the  ccf using arima proc For Second Order Differencing ; 
+PROC ARIMA DATA=data1 plots(only)=(series(acf pacf crosscorr) );
+IDENTIFY VAR=temp(1,12)   NLAG=27;
+IDENTIFY VAR=Elec(1,12)   NLAG=27   ; 
+run;  quit;
+
+
+/* Prewhitening of the  series xt 
+proc arima data=data1 plots(only)=(series( crosscorr) residual(acf pacf  normal));;
+identify var=xt nlag=27;
+estimate q=(12) method=ML plot noconstant;
+identify var=yt nlag=27 crosscorr=(xt)  ;
+run;
+
+
+
+*Compute the  ccf using arima proc (Second Differencing) ; 
+PROC ARIMA DATA=data1 plots(only)=(series(acf pacf crosscorr) );
+IDENTIFY VAR=xt(1) NLAG=27;
+IDENTIFY VAR=yt(1) NLAG=27  crosscorr=xt(1) ; 
+run;  quit;
+
+
+*Compute the  ccf using arima proc (transformed Elec and Temp) ; 
+PROC ARIMA DATA=data1 plots(only)=(series(acf pacf crosscorr) );
+IDENTIFY VAR=lxt NLAG=27;
+IDENTIFY VAR=lyt NLAG=27  crosscorr=lxt ; 
+run;  quit;
+
+*/
+
+
+
+
+
+/* Prewhitening of the series xt  (Model: SARIMA(2,0,1)(1,1,0){12}*/
+proc arima data=data1 plots(only)=(series( crosscorr) residual(acf pacf  normal));;
+identify var=Temp(12)   nlag=27;
+estimate  p=(1,2)(12)  q=(1)   method=ML plot noconstant;
+identify var=yt nlag=27 crosscorr=(xt);
+run;
+
+
+
+
+
+
+
+
+/*Prewhitening of the series xt (Model: SARIMA(2,0,1)(0,1,1){12}*/
+proc arima data=data1 plots(only)=(series( crosscorr) residual(acf pacf  normal));;
+identify var=Temp(12)  nlag=27;
+estimate p=2  q=(1) (12)  method=ML plot noconstant;
+identify var=yt nlag=27 crosscorr=(xt)  ;
+run;
+
+
+
+/* Fit the model 
+proc arima data=data1 plots(only)=(residual(all)) ;
+identify var=xt;
+estimate p=2  q=(1) (12)  method=ML plot noconstant;
+identify var=yt nlag=25 crosscorr=(xt)  ;
+estimate input=((1,2) /(1,2)xt) method=ml noconstant;
+forecast lead=0 id=date  interval=month  out=forecastx noprint;
+run; quit;*/
+
+
+
+/* Fit the model 
+proc arima data=data1 plots(only)=(residual(all)) ;
+identify var=xt;
+estimate  p=(1,2)(12)  q=(1)   method=ML plot noconstant;
+identify var=yt nlag=25 crosscorr=(xt)  ;
+estimate input=( /(1,2)xt) method=ml noconstant;
+forecast lead=0 id=date  interval=month out=forecast1 noprint;
+run; quit;*/
+
+
+
+/* Fit the model 
+proc arima data=data1 plots(only)=(residual(all)) ;
+identify var=xt;
+estimate  p=(1,2)(12)  q=(1)   method=ML plot noconstant;
+identify var=yt nlag=25 crosscorr=(xt)  ;
+estimate input=( /(1)xt) method=ml noconstant;
+forecast lead=0 id=date  interval=month out=forecast2 noprint;
+run; quit;*/
+
+
+
+/* Fit the model-------Preferred */
+proc arima data=data1 plots(only)=(residual(all)) ;
+identify var=xt;
+estimate  p=(1,2)(12)  q=(1)   method=ML plot noconstant;
+identify var=yt nlag=25 crosscorr=(xt)  ;
+estimate input=((1,2) / (1,2)xt) method=ml noconstant;
+forecast lead=0 id=date  interval=month out=forecast3 noprint;
+run; quit;
+
+
+/*
+
+
+/* Fit the model 
+proc arima data=data1 plots(only)=(residual(all)) ;
+identify var=xt;
+estimate  p=(1,2)(12)  q=(1)   method=ML plot noconstant;
+identify var=yt nlag=25 crosscorr=(xt)  ;
+estimate input=((1,2) / (1)xt) method=ml noconstant;
+forecast lead=0 id=date  interval=month out=forecast4 noprint;
+run; quit;*/
+
+
+
+
+/* Fit the model 
+proc arima data=data1 plots(only)=(residual(all)) ;
+identify var=xt;
+estimate  p=(1,2)(12)  q=(1)   method=ML plot noconstant;
+identify var=yt nlag=25 crosscorr=(xt)  ;
+estimate input=((1,2,3) / (1)xt) method=ml noconstant;
+forecast lead=0 id=date  interval=month out=forecast5 noprint;
+run; quit;*/
+
+
+
+
+
+/* Fit the model 
+proc arima data=data1 plots(only)=(residual(all)) ;
+identify var=xt;
+estimate  p=(1,2)(12)  q=(1)   method=ML plot noconstant;
+identify var=yt nlag=25 crosscorr=(xt)  ;
+estimate input=((1,2,3) /  xt) method=ml noconstant;
+forecast lead=0 id=date  interval=month out=forecast6 noprint;
+run; quit;*/
+
+
+
+
+
+PROC ARIMA DATA=forecast3  plots(only)=(series(all));
+IDENTIFY VAR=residual NLAG=27 ;
+run;
+
+%autoarma( data=forecast3,  yvar=residual, maxp=3 , maxq=3,out=prodout); 
+
+proc print data= prodout;
+run;
+
+
+proc arima data=forecast3 plots(only)=(residual( all));
+identify var=residual;
+estimate method=ml noconstant ;
+run;
+
+*/
+
+
+
+proc arima data=forecast3 plots(only)=(residual( all));
+identify var=residual;
+estimate method=ml noconstant ;
+run;
+
+
+*Compute the  ccf using arima proc (Original Model) ; 
+PROC ARIMA DATA=forecast3  plots(only)=(series(acf pacf crosscorr) );
+IDENTIFY VAR=residual NLAG=27   stationarity=(adf=1) ;
+estimate  p=(1,2)(12)  method=ML  plot noconstant;
+identify var=yt nlag=27 crosscorr=(residual)  ;
+run;  quit;
+
+
+
+/* Fit the model-------Preferred-----Forecast */
+proc arima data=data1 plots(only)=(residual(all)) ;
+identify var=Temp;
+estimate  p=(1,2)(12)  q=(1)   method=ML  noconstant;
+identify var=Elec nlag=25 crosscorr=(Temp)  ;
+estimate input=((1,2) / (1,2)Temp) method=ml noconstant;
+forecast lead=10 id=date  interval=month out=forecastf;
+run; quit;
+
+
+
+
+ods pdf close;
+
+
+
+
+
+
